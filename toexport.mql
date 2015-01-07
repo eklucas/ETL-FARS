@@ -1,0 +1,59 @@
+SET default_storage_engine=MYISAM;
+
+## Insert SQL below here.
+##
+
+## Set 'tables' and other Python variables.
+_inject_ python_fars.txt
+
+
+## increase the maximum length of a group_concat so our 
+## CSV header row can be larger than 1024 characters.
+SET SESSION group_concat_max_len = 1000000;
+
+## START LOOP THROUGH ALL TABLES.
+%for i, table in enumerate(tables):
+
+
+##########################################################
+-- EXPORT ${table} (table ${i+1} of ${len(tables)}) to CSV format for Excel/Access.
+## We will concatenate header and records in 5export.txt.
+##########################################################
+
+SELECT CONCAT(GROUP_CONCAT('"', COLUMN_NAME, '"' SEPARATOR ','), '') FROM INFORMATION_SCHEMA.COLUMNS 
+  WHERE TABLE_SCHEMA = '${cb['self'].working_db}' AND TABLE_NAME  = '${table}' 
+  GROUP BY TABLE_NAME INTO OUTFILE "${cb['self'].done_dirf}/${table}_header.txt" 
+  LINES TERMINATED BY '\r\n';
+SELECT * INTO OUTFILE "${cb['self'].done_dirf}/${table}.txt"  
+FIELDS TERMINATED BY ',' ENCLOSED BY '"' ESCAPED BY '"' LINES TERMINATED BY '\r\n'
+  FROM `${table}`;
+
+  
+##########################################################
+-- PREP date fields for SQL dump for MySQL users.
+##########################################################
+
+%if table == 'accident':
+UPDATE `accident` SET 
+  `NICAR_ACC_DATE` = '0000-00-00' 
+  WHERE `MONTH` = '' OR `MONTH` IS NULL OR `DAY` = '' OR `DAY` IS NULL OR
+  `MONTH` < 0 OR `MONTH` > 12 OR `DAY` < 0 OR `DAY` > 31; 
+UPDATE `accident` SET `NICAR_ACC_DATE` = 
+  date_format(str_to_date(`NICAR_ACC_DATE`, '%m/%d/%Y'),'%Y-%m-%d')
+  WHERE `NICAR_ACC_DATE` <> '0000-00-00';
+ALTER TABLE `accident` CHANGE `NICAR_ACC_DATE` `NICAR_ACC_DATE` DATE NULL; 
+
+%elif table == 'person':
+UPDATE `person` SET 
+  `NICAR_DEATHDT` = '0000-00-00' 
+  WHERE `DEATH_MO` = '' OR `DEATH_MO` IS NULL OR `DEATH_DA` = '' OR `DEATH_DA` IS NULL OR
+  `DEATH_MO` < 0 OR `DEATH_MO` > 12 OR `DEATH_DA` < 0 OR `DEATH_DA` > 31; 
+UPDATE `person` SET `NICAR_DEATHDT` = 
+  date_format(str_to_date(`NICAR_DEATHDT`, '%m/%d/%Y'),'%Y-%m-%d')
+  WHERE `NICAR_DEATHDT` <> '0000-00-00';
+ALTER TABLE `person` CHANGE `NICAR_DEATHDT` `NICAR_DEATHDT` DATE NULL; 
+%endif
+
+
+## END LOOP THROUGH ALL TABLES.
+%endfor

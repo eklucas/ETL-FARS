@@ -1,0 +1,34 @@
+## NOTE:  The doupload task is solely for uploading archived data.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+##
+## START DOUPLOAD.
+##
+_cmdshell_
+xcopy ${cb['self'].last_6zip}\done\*.zip . /v
+@pscp -v -C -pw ${cb['self'].upload_pass} -sftp *.zip ${cb['self'].upload_user}@${cb['self'].upload_host}:${cb['self'].upload_path} < q:\carbarn\keep\y.txt
+
+
+##<%
+##  zipfiles = cb['self'].last_6zip + '\\done' 
+##  burnzip = cb['self'].jobname + '__toburn.zip'
+##  burndst = '\\\\greene.nicar.org\\data\\' + cb['self'].jobname
+##  sellzip = cb['self'].jobname + '.zip'
+##  selldst = '\\\\greene.nicar.org\\datanicarorg\\data'
+##  
+##  print 'zipfiles= ', zipfiles
+##  print 'burnzip= ', burnzip
+##  print 'burndst= ', burndst
+##  print 'sellzip= ', sellzip
+##  print 'selldst= ', selldst
+##%>
+##xcopy ${zipfiles}\*.* . /v/y
+##echo F | xcopy ${burnzip} ${burndst}\${burnzip} /v/y
+##echo F | xcopy ${sellzip} ${selldst}\${sellzip} /v/y
+
+## END DOUPLOAD.
+###################################

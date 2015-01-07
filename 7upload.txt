@@ -1,0 +1,16 @@
+## NOTE:  The doupload task is solely for uploading archived data.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+##
+## START DOUPLOAD.
+##
+_cmdshell_
+xcopy ${cb['self'].last_6zip}\done\*.zip . /v
+@pscp -v -C -pw ${cb['self'].upload_pass} -sftp *.zip ${cb['self'].upload_user}@${cb['self'].upload_host}:${cb['self'].upload_path} < q:\carbarn\keep\y.txt
+
+## END DOUPLOAD.
+###################################

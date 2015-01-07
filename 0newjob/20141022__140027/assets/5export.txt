@@ -1,0 +1,118 @@
+## NOTE:  The doexport task is solely for exporting data.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+##
+## START DOEXPORT.
+##
+_cmdshell_
+## Copy job's 'keep' files.
+xcopy ${cb['self'].keeppath}\*.* . /s/e/v
+
+## Copy data from the last unzipped directory.
+mkdir unzipped
+xcopy ${cb['self'].last_2unzip}\done unzipped /s/e/v
+
+## Copy the cleaned dump file from doclean task.
+mkdir cleaned
+xcopy ${cb['self'].last_4clean}\done\*.dmp cleaned
+xcopy ${cb['self'].last_4clean}\done\*.log cleaned
+
+## Create an export database and load cleaned database.
+%if cb['self'].dbms == 'postgres':
+@set PGPASSWORD=${cb['self'].dbpass}
+createdb -U ${cb['self'].dbuser} -w -E UTF8 --lc-collate=C --lc-ctype=C -T template0 ${cb['self'].working_db}
+pg_restore -U ${cb['self'].dbuser} -w -j 2 -d ${cb['self'].working_db} cleaned\cleaned.dmp
+%elif cb['self'].dbms == 'mysql':
+@set MYSQL_PWD=${cb['self'].dbpass}
+mysqladmin -u ${cb['self'].dbuser} create ${cb['self'].working_db}
+mysql -u ${cb['self'].dbuser} ${cb['self'].working_db} < cleaned\cleaned.dmp
+%endif
+
+
+_psql_
+## Process SQL statements by "psql" program. Feel free to use the STORM ORM in 
+## Python code blocks (i.e. to concurrently use both PostgreSQL and MySQL).
+## Order flow:
+##
+##   a) Run statements in "toexport.pql", if it exists in your job directory.
+##      Ie, c:\carbarn\jobs\testjob\do\toexport.pql.
+##   b) Run statements in _psql_ stanza, if there are any.
+##
+##  Note: "postgres" must be the listed DBMS in "carbarn.ini" for the psql stanza
+##       to be processed by the "psql" program. 
+--
+-- EXPORT README FILE. 
+--
+\copy (SELECT README FROM carbarn) TO '${cb['self'].done_dir}\readme.out' CSV QUOTE AS '_'
+
+
+_mysql_
+## Process SQL statements by "mysql" program. Feel free to use the STORM ORM in 
+## Python code blocks (i.e. to concurrently use both PostgreSQL and MySQL).
+##
+## Order flow: 
+##   a) Run statements in "toexport.mql", if it exists in your job directory.
+##      Ie, c:\carbarn\jobs\testjob\do\toexport.mql.
+##   b) Run statements in _mysql_ stanza, if there are any.
+##
+## Note: "mysql" must be the listed DBMS in "carbarn.ini for the mysql stanza
+##      to be processed by the "mysql" program.
+--
+-- EXPORT README FILE. 
+--
+SELECT README INTO OUTFILE '${cb['self'].done_dirf}/readme.out' LINES TERMINATED BY '' FROM CARBARN;
+
+
+##
+## START DLSTAFF
+_cmdshell_
+## Set 'tables', 'year', and other Python variables.
+_inject_ python_main.txt
+
+##########################################################
+## FINALIZE Excel/Access CSV files.
+## Concatenate header and records.
+##########################################################
+@echo.
+@echo ==================================
+@echo FINALIZING Excel/Access CSV files.
+
+%for table in tables:
+copy ${table}_header.txt + ${table}.txt ${table}.csv
+sed -i "/^$/d" ${table}.csv
+%endfor
+
+## CLEANUP FILES/
+del *.txt
+del sed* /F/Q
+
+move readme.out readme.txt
+##xcopy documentation\. . /s/e/v
+##rmdir documentation /S /Q
+
+## dump MySQL tables. 
+@set MYSQL_PWD=${cb['self'].dbpass}
+mysqldump -F --skip-add-drop-database --no-create-db --user=${cb['self'].dbuser} ${cb['self'].working_db} ${tablestr} > ${cb['self'].jobname}.sql
+
+
+##
+## FINAL EXPORT DUMP. 
+## This is redudant and unnecessary, since doexport shouldn't be changing the data,
+## and since a dump of the cleaned data is in "cleaned".  To eliminate this step,
+## comment the lines in the following "cmdshell" stanza.
+##
+##_cmdshell_
+##%if cb['self'].dbms == 'postgres':
+##@set PGPASSWORD=${cb['self'].dbpass}
+##pg_dump -U ${cb['self'].dbuser} -w -Fc --blobs --encoding=UTF-8 -f exported.dmp ${cb['self'].working_db}
+##%elif cb['self'].dbms == 'mysql':
+##@set MYSQL_PWD=${cb['self'].dbpass}
+##mysqldump -F -R --skip-add-drop-database --no-create-db --user=${cb['self'].dbuser} ${cb['self'].working_db} > exported.dmp
+##%endif
+
+## END DOEXPORT.
+###################################

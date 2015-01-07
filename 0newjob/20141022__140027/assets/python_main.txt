@@ -1,0 +1,32 @@
+<% 
+  # MOST staff changes will be within python_main.txt and toclean.mql.
+  #
+
+  from datetime import date
+  year = date.today().year - 2000
+  month = date.today().month
+   
+  if int(year) > 60:
+    century= 1900
+  else:
+    century= 2000 
+  
+  prevyear= year-1
+  fullyear= century+year
+  prevfullyear = fullyear-1
+  print "\n\nFULL YEAR", fullyear
+
+  # List the tables we're working with. 
+  tables = ['table1', 'table2', 'table3', 'table4', 'table5', \
+    'table6', 'table7']
+    
+  # Optionally list a few date fields so exporting is easier in toexport.mql. Exported CSV files 
+  # will have Excel/Access date fields, and the dumped .sql file will have MySQL date fields.
+  # date_fields = ['field1', 'field2', 'field3', 'field4', 'field5', \
+  #  'field6', 'field7']
+  
+  # Define a string with all the table names separated by a space. This used in 5export.txt
+  # for mysqldump.            
+  tablestr = ' '.join(tables)
+  
+%>

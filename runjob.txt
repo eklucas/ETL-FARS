@@ -1,0 +1,12 @@
+
+## Note we don't run 'newjob' here because "cb runjob <job>" assumes 
+## that you've already setup a new job that you want to schedule.
+##
+
+##dodownload cb_fars
+##dounzip cb_fars
+doimport cb_fars
+doclean  cb_fars
+doexport cb_fars
+dozip cb_fars
+##doupload cb_fars

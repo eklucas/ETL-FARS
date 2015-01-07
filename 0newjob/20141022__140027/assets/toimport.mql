@@ -1,0 +1,5 @@
+SET default_storage_engine=MYISAM;
+
+## Insert SQL below here.
+##
+

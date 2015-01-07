@@ -1,0 +1,25 @@
+## NOTE:  The dodownload task is solely for downloading data.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+## START DODOWNLOAD.
+##
+## Use "_wget_", "_ftp_" or "_aria2c_", followed by appropriate 
+## download commands. aria2c docs: 
+## http://aria2.sourceforge.net/manual/en/html/aria2c.html#input-file
+_wget_
+## Set the 'year' variable.
+_inject_ python_fars.txt
+
+## list of download files for wget.
+ftp://ftp.nhtsa.dot.gov/FARS/${fullyear}/SAS/FSAS*.*
+ftp://ftp.nhtsa.dot.gov/FARS/FARS-DOC/${fullyear} FARS-NASS GES C&V Manual.zip
+ftp://ftp.nhtsa.dot.gov/FARS/FARS-DOC/FARS *.*
+
+
+
+## END DODOWNLOAD.
+###################################

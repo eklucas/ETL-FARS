@@ -1,0 +1,234 @@
+## NOTE:  The doclean task is for all data transformations, including cleaning.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+##
+## START DOCLEAN.
+##
+_cmdshell_
+## Copy the imported dump file from 3import task.
+mkdir imported
+xcopy ${cb['self'].last_3import}\done\imported.dmp imported
+xcopy ${cb['self'].last_3import}\done\*.log imported
+
+## Create a cleaning database and load import database.
+%if cb['self'].dbms == 'postgres':
+@set PGPASSWORD=${cb['self'].dbpass}
+createdb -U ${cb['self'].dbuser} -w -E UTF8 --lc-collate=C --lc-ctype=C -T template0 ${cb['self'].working_db}
+pg_restore -U ${cb['self'].dbuser} -w -j 2 -d ${cb['self'].working_db} imported\imported.dmp
+%elif cb['self'].dbms == 'mysql':
+@set MYSQL_PWD=${cb['self'].dbpass}
+mysqladmin -u ${cb['self'].dbuser} create ${cb['self'].working_db}
+mysql -u ${cb['self'].dbuser} ${cb['self'].working_db} < imported\imported.dmp
+%endif
+
+
+_psql_
+## Process SQL statements by "psql" program. Feel free to use the STORM ORM in 
+## Python code blocks (i.e. to concurrently use both PostgreSQL and MySQL).
+##
+## Order flow:
+##   a) Run statements in "toclean.pql", if it exists in your job directory.
+##      Ie, c:\carbarn\jobs\testjob\do\toclean.pql.
+##   b) Run statements in _psql_ stanza, if there are any.
+##
+##  Note: "postgres" must be the listed DBMS in "carbarn.ini" for the psql stanza
+##       to be processed by the "psql" program. 
+##
+##  Note: 'gcMainTable' and 'gcDoClean' are set in toclean.pql and must exist. 
+##       Since the cleaning code takes time to complete, you can set gcDoClean 
+##       to False while testing your own SQL, then change it to true later.
+##
+%if gcDoClean == True:
+--
+--
+-- ===========================================
+--  PostgreSQL stored procedures for cleaning
+-- ===========================================
+--
+
+CREATE OR REPLACE FUNCTION clean_all() RETURNS VOID AS '
+DECLARE
+v_schema varchar;
+v_rec RECORD;
+w_rec RECORD;
+x_rec RECORD;
+
+BEGIN
+    v_schema := ''public'';
+    FOR v_rec IN SELECT tablename FROM pg_catalog.pg_tables 
+        WHERE schemaname = v_schema AND tablename <> ''carbarn'' LOOP
+        
+        FOR w_rec IN SELECT attname FROM pg_attribute 
+            WHERE attrelid = (SELECT oid FROM pg_class WHERE relname = v_REC.tablename) AND attnum > 0 LOOP
+            
+            FOR x_rec IN SELECT column_name FROM information_schema.columns
+                WHERE table_name = v_REC.tablename AND column_name = w_REC.attname AND 
+                (data_type = ''text'' OR data_type = ''char'' OR data_type = ''character'' OR 
+                 data_type = ''varchar'' OR data_type = ''character varying'') LOOP
+                
+                EXECUTE ''UPDATE '' || quote_ident(v_REC.tablename) || '' SET ''
+                || w_REC.attname
+                || '' = ''
+                || ''UPPER('' 
+                || quote_ident(w_REC.attname) 
+                || '')'';
+            
+                raise notice ''CLEANING table %, field %'', v_REC.tablename, w_REC.attname;
+        
+            END LOOP;
+        END LOOP;
+    END LOOP;
+END;
+' LANGUAGE 'plpgsql';
+SELECT clean_all();
+% endif
+
+--
+-- UPDATE CARBARN META-DATA TABLE --
+--
+UPDATE carbarn SET RECORDS = TRIM(TO_CHAR((SELECT COUNT(*) FROM ${gcMainTable}), '999G999G999G999G999G999'));
+UPDATE carbarn SET DATE = TRIM(TO_CHAR(NOW(), 'mm/dd/yy'));
+
+CREATE OR REPLACE FUNCTION bytea_import(p_path text, p_result out bytea) 
+                   LANGUAGE plpgsql AS $$
+DECLARE
+  l_oid oid;
+  r record;
+BEGIN
+  p_result := '';
+  SELECT lo_import(p_path) into l_oid;
+  FOR r IN ( SELECT data 
+             FROM pg_largeobject 
+             WHERE loid = l_oid 
+             ORDER BY pageno ) LOOP
+    p_result = p_result || r.data;
+  END LOOP;
+  perform lo_unlink(l_oid);
+END;$$;
+
+CREATE OR REPLACE FUNCTION bytea2text(bytea)
+  RETURNS TEXT AS
+    $body$begin
+    RETURN encode($1, 'escape');
+  end;$body$
+LANGUAGE 'plpgsql' IMMUTABLE STRICT;
+
+UPDATE carbarn SET ENCODED = bytea_import('${cb['self'].dorun}\dbreadme.txt');
+UPDATE carbarn SET README = regexp_replace(bytea2text(ENCODED::bytea), E'[\\n\\r]+', E'\r\n', 'g');
+UPDATE carbarn SET README = replace(README, 'DATEDATE', TRIM(TO_CHAR(NOW(), 'mm/dd/yy')));
+UPDATE carbarn SET README = replace(README, 'XXXXXX', TRIM(TO_CHAR((SELECT COUNT(*) FROM ${gcMainTable}), '999G999G999G999G999G999')));
+
+
+_mysql_
+## Process SQL statements by "mysql" program. Feel free to use the STORM ORM in 
+## Python code blocks (i.e. to concurrently use both PostgreSQL and MySQL).
+##
+## Order flow: 
+##   a) Run statements in "toclean.mql", if it exists in your job directory.
+##      Ie, c:\carbarn\jobs\testjob\do\toclean.mql.
+##   b) Run statements in _mysql_ stanza, if there are any.
+##
+## Note: "mysql" must be the listed DBMS in "carbarn.ini for the mysql stanza
+##      to be processed by the "mysql" program.
+## 
+%if gcDoClean == True:
+--
+--
+-- ======================================
+--  MySQL stored procedures for cleaning
+-- ======================================
+--
+
+USE mysql;
+DROP PROCEDURE IF EXISTS clean_table;
+DELIMITER $$
+CREATE PROCEDURE `clean_table`(IN database_in VARCHAR(255),
+                               IN table_in VARCHAR(255))
+COMMENT 'UPPER and TRIM ASCII fields in the table'
+BEGIN
+  DECLARE done INT DEFAULT 0;
+  DECLARE col  VARCHAR(200);
+  DECLARE res VARCHAR(65535);
+  DECLARE cur1 CURSOR FOR 
+    select COLUMN_NAME from information_schema.columns 
+    where TABLE_NAME=table_in AND TABLE_NAME <> 'carbarn'
+    and TABLE_SCHEMA=database_in  
+    and (data_type = 'char' or data_type = 'varchar' or 
+         data_type = 'tinytext' or data_type = 'text' or
+         data_type = 'mediumtext' or data_type = 'longtext') 
+    ORDER BY ORDINAL_POSITION;
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+  OPEN cur1;
+  SET @res := '';
+  REPEAT
+       FETCH cur1 INTO col;
+       IF NOT done THEN 
+          SET @res := CONCAT(@res, ' `', col, "` = REPLACE(REPLACE(IFNULL(UPPER(TRIM(`", col, "`)), ''),'\n',' '),'\r',' '),");
+       END IF;
+    UNTIL done END REPEAT;
+    SET @res := IF(LENGTH(@res)>0,CONCAT('UPDATE `',database_in,'`.`',table_in,'` SET ',@res),' ');
+    SET @res := LEFT(@res, char_length(@res) - 1);
+    IF (@res IS NOT NULL AND @res <> '') THEN
+      select CONCAT_WS(' ','Cleaning table',table_in);	
+      select @res;
+      PREPARE stmt FROM @res;
+      EXECUTE stmt;
+    END IF;
+  CLOSE cur1;
+END$$
+DROP PROCEDURE IF EXISTS clean_database;
+CREATE PROCEDURE `clean_database`(IN database_in VARCHAR(255))
+COMMENT 'Clean our tables'
+BEGIN
+  DECLARE done INT DEFAULT 0;
+  DECLARE col  VARCHAR(200);
+  DECLARE cur1 CURSOR FOR  
+    select distinct TABLE_NAME from information_schema.columns 
+    where TABLE_SCHEMA=database_in AND TABLE_SCHEMA <> 'mysql'
+    AND TABLE_NAME <> 'carbarn'  
+    ORDER BY ORDINAL_POSITION;  
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+  OPEN cur1;
+  REPEAT
+       FETCH cur1 INTO col;
+       IF NOT done THEN 
+          call clean_table(database_in, col);
+       END IF;
+    UNTIL done END REPEAT;
+  CLOSE cur1;
+END$$
+DELIMITER ;
+USE `${cb['self'].working_db}`;
+\w
+CALL mysql.clean_database(database());
+\W
+% endif
+
+--
+-- UPDATE CARBARN META-DATA TABLE --
+--
+LOAD DATA LOCAL INFILE '${cb['self'].dorunf}/dbreadme.txt' INTO TABLE carbarn 
+  LINES TERMINATED BY 'WILLNOTBEFOUND' (readme);
+DELETE FROM carbarn WHERE readme = '';
+UPDATE carbarn SET DATE = DATE_FORMAT(CURDATE(), '%m/%d/%y');
+UPDATE carbarn SET RECORDS = FORMAT((SELECT COUNT(*) FROM `${gcMainTable}`),0);
+UPDATE carbarn SET readme = REPLACE(readme, 'DATEDATE', DATE_FORMAT(CURDATE(), '%m/%d/%y'));
+UPDATE carbarn SET readme = REPLACE(readme, 'XXXXXX', FORMAT((SELECT COUNT(*) FROM `${gcMainTable}`),0));
+
+
+_cmdshell_
+%if cb['self'].dbms == 'postgres':
+@set PGPASSWORD=${cb['self'].dbpass}
+pg_dump -U ${cb['self'].dbuser} -w -Fc --blobs --encoding=UTF-8 -f cleaned.dmp ${cb['self'].working_db}
+%elif cb['self'].dbms == 'mysql':
+@set MYSQL_PWD=${cb['self'].dbpass}
+mysqldump -F -R --skip-add-drop-database --no-create-db --user=${cb['self'].dbuser} ${cb['self'].working_db} > cleaned.dmp
+mysqlshow -v -v -v --user=${cb['self'].dbuser} ${cb['self'].working_db}
+%endif
+
+## END DOCLEAN.
+###################################

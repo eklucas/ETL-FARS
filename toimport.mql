@@ -1,0 +1,43 @@
+## SET default_storage_engine=MYISAM;
+## 
+## ## Insert SQL below here.
+
+## Make changes to old data to accommodate new data (see analytical users guide)
+## V126 - V136 added to Vehicle and Parkwork
+## C3A, C4B, C5A added to Accident 
+## NM4 in Person changed from N_MOT_NO to STR_VEH
+
+
+_inject_ python_fars.txt
+
+<%
+import os,csv
+
+dir='unzipped\coded'
+suffix= '_coded.txt'
+
+fields= {}; cwd= os.path.normpath(os.getcwd()); 
+if tables:
+    for table in tables:
+        filename= os.path.normpath(cwd+'/'+dir+'/'+table+suffix)
+        fcsv= open(os.path.normpath(filename), "rU")
+        reader = csv.reader(fcsv, dialect='excel', quoting=csv.QUOTE_ALL)
+        for row in reader:
+            fields[table]= row
+            break
+        fcsv.close()
+%>
+
+%for table in tables:
+
+CREATE TABLE `${table}` (
+%for i, field in enumerate(fields[table]):
+    `${field}` varchar(255) DEFAULT NULL${',' if i < len(fields[table]) - 1 else ''}
+%endfor
+);
+-- Load appended_${table}.csv file.
+LOAD DATA LOCAL INFILE 'unzipped/${table}.csv' INTO TABLE `${table}` 
+  FIELDS TERMINATED BY ',' ENCLOSED BY '"' ESCAPED BY '' LINES TERMINATED BY '\r\n' 
+  IGNORE 1 LINES;
+  
+%endfor

@@ -1,0 +1,21 @@
+## NOTE:  The doclean task is for all data transformations, including cleaning.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+## NOTE:  'gcMainTable' and 'gcDoClean' are set in toclean.mql and must exist. 
+##
+
+<%
+ gcMainTable = 'mytable'   # change 'mytable' to your main table.
+ gcDoClean = True          # change 'gcDoClean' to False to disable cleaning code
+                           # in 4clean.txt. Your SQL in toclean.mql always runs.
+ 
+ print "gcMainTable= ", gcMainTable
+ print "gcDoClean= ", gcDoClean
+%>
+
+SET default_storage_engine=MYISAM;
+
+## Insert SQL below here.
+##

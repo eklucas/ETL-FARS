@@ -1,0 +1,47 @@
+## NOTE:  The dozip task is solely for archiving exported data.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+##
+## START DOZIP.
+##
+_cmdshell_
+## Set 'year' and other variables.
+_inject_ python_fars.txt
+
+<%
+  from datetime import datetime
+  now = datetime.now().strftime('%Y%m%d%H%M%S')
+    
+  DLdir = cb['self'].last_1download
+  exportdir = cb['self'].last_5export + '\\done'
+  importdir = cb['self'].last_4clean + '\\done\\imported'
+  newjobdir = cb['self'].last_3import + '\\done\\newjob'
+  jobname = cb['self'].jobname
+  toburndir = cb['self'].carbarn_dir + '\\keep\\glacier_upload_queue\\' + jobname
+    
+  print 'exportdir= ', exportdir
+  print 'importdir= ', importdir
+  print 'newjobdir= ', newjobdir
+  print 'jobname= ', jobname
+  
+  # Uncomment one of the next two lines, to enable or disable copying "to-burn" staff 
+  # archives to our Glacier staging area at \carbarn\keep\glacier_upload_queue\.
+  glacier= False
+  #glacier= True
+
+%>
+7za a -r fars${year}.zip ${exportdir}\*.* -x!*.dmp -x!*.log -xr!cleaned -xr!unzipped 
+
+
+%if glacier:
+rename "${DLdir}\done" downloaded_data
+7za a -r -t7z ${toburndir}\${jobname}__toburn__${now}.7z ${cb['self'].keeppath}\ ${exportdir}\..\done\ -xr!backups -x!*.dmp -x!*.sql -xr!cleaned -xr!unzipped  ..\assets\ ${DLdir}\downloaded_data\  -x!${jobname}.zip.* -x!${jobname}.zip -v650m
+rename "${DLdir}\downloaded_data" done
+%endif
+
+## END DOZIP.
+###################################

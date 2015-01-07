@@ -1,0 +1,38 @@
+<% 
+  # MOST staff changes will be within python_fars.txt and toclean.mql.
+  #
+  # Assume development job is named "cb_fars" and assume production job has 
+  # the FULL year's suffix on its name:  ie, cb_fars10 and cb_fars12.
+  
+  if cb['self'].jobname <> 'cb_fars':
+    year = cb['self'].jobname[-2:]
+  else: 
+  
+  # For development job (devfec) we assume the full year is passed on command-line:
+  # ie, cb runjob cb_fars --extra "year=10"
+    try:
+      year = cb['self']['year']
+    except KeyError:
+      year = '12'   # assume '12' if not passed on command-line.
+      
+  if int(year) > 60:
+    century= '19'
+  else:
+    century= '20'
+  
+  prevyear = int(year)-1
+  fullyear= int(century+year)
+  prevfullyear = int(fullyear)-1
+  print "\n\nFULL YEAR", fullyear
+
+  # List the tables you're working with. This is used to create the SAS code, and used
+  # by MySQL while importing, cleaning and exporting.  
+  tables = ['accident', 'person', 'vehicle', 'cevent', 'distract', 'drimpair', \
+            'factor', 'maneuver', 'nmcrash', 'nmimpair', 'nmprior', 'parkwork', \
+            'safetyeq', 'vevent', 'violatn', 'vision', 'vsoe']
+
+  # Define a string with all the table names separated by a space. This used in 5export.txt
+  # for mysqldump.            
+  tablestr = ' '.join(tables)
+  
+%>

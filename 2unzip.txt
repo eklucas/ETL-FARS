@@ -1,0 +1,77 @@
+## NOTE:  The dounzip task is solely for extracting downloaded data.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+## START DOUNZIP.
+##
+_cmdshell_
+xcopy ${cb['self'].last_1download}\done\*.zip .
+7za x *.zip
+############################
+
+
+## Create a script to dump records with numerical codes.
+## This -- later runs as noncoded.sas -- is the entire script to create delimited files.
+_null_
+## Set 'year' and other variables.
+_inject_ python_fars.txt
+
+libname fars '${cb['self'].done_dir}\';
+OPTIONS nofmterr;
+
+%for table in tables:
+PROC EXPORT DATA= fars.${table} 
+  OUTFILE= '${table}_noncoded.txt' 
+  DBMS=TAB REPLACE;
+% endfor
+
+RUN;
+############################
+
+
+## Create a snippet to dump records with English codes.
+## This is appended to formatXX.sas below, then run to create delimited files.
+_null_
+## Set 'year' and other variables.
+_inject_ python_fars.txt
+
+libname fars '${cb['self'].done_dir}\';
+PROC FORMAT;
+
+%for table in tables:
+PROC EXPORT DATA= fars.${table} 
+  OUTFILE= '${table}_coded.txt' 
+  DBMS=TAB REPLACE;
+% endfor
+
+RUN;
+############################
+
+
+_cmdshell_
+## Set 'year' and other variables.
+_inject_ python_fars.txt
+
+## Generate numerical-coded, delimited TXT files:
+## 1. Copy ..\_null_1.in (non-coded snippet) to noncoded.sas and run it. 
+copy ..\_null_1.in noncoded.sas
+sas.exe -SYSIN noncoded.sas -log "noncoded.log" 
+
+
+## Generate enlish-coded, delimited files:
+## 1. Python processes formatXX.sas and strips incorrect libname statement, 
+##    then saves as format.out.
+## 2. Copy ..\_null_2.in (coded snippet) and format.out, save combined as coded.sas.
+## 3. Create autoexec.sas with correct libname statement.
+## 4. Run coded.sas. 
+type format*.sas | python -c "import sys,re;[sys.stdout.write(re.sub(r'^(libname library(.)*)', '', line)) for line in sys.stdin]" > format.out
+copy format.out + ..\_null_2.in coded.sas
+echo LIBNAME library '${cb['self'].done_dir}'; > autoexec.sas
+sas.exe -SYSIN coded.sas -log "coded.log"
+
+
+## END DOUNZIP
+###################################

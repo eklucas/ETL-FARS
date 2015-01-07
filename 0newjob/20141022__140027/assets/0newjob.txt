@@ -1,0 +1,59 @@
+## NOTE: The newjob task is solely for creating a new data job.
+##
+
+###################################
+## START NEWJOB.
+_cmdshell_
+## This line is a comment.
+## '_cmdshell_' creates a .bat batch file to run.
+
+%if cb['self'].dbms == 'postgres':
+@set PGPASSWORD=${cb['self'].dbpass}
+createdb -U ${cb['self'].dbuser} -w -E UTF8 --lc-collate=C --lc-ctype=C -T template0 ${cb['self'].jobname}
+%elif cb['self'].dbms == 'mysql':
+@set MYSQL_PWD=${cb['self'].dbpass}
+mysqladmin -u ${cb['self'].dbuser} create ${cb['self'].jobname}
+%endif
+
+_psql_
+## '_psql_' creates a .sql file to run through PostgreSQL.
+%if cb['self'].dbms == 'postgres':
+CREATE TABLE carbarn
+(
+-- THESE FOUR FIELDS ARE SEEDED IN THE CLEANING PHASE.
+readme text, -- seeded from dbreadme.txt in the job directory, then 'DATEDATE' and 'XXXXXX' is replaced with the actual date and record count.
+encoded text, -- contains bytea version of dbreadme.txt read from job directory.
+records character varying(32), -- set to human-readable number of records in main table.
+date character varying(64) -- set to human-readable date string.
+)
+WITH (
+OIDS=TRUE
+);
+INSERT INTO carbarn (readme,records,date) VALUES('',0,'');
+%endif
+
+_mysql_
+## '_mysql_' creates a .sql file to run through MySQL.
+%if cb['self'].dbms == 'mysql':
+SET default_storage_engine=MYISAM;
+-- insert SQL here.
+CREATE TABLE `carbarn`( 
+`readme` LONGTEXT, -- seeded from dbreadme.txt in the job directory, then 'DATEDATE' and 'XXXXXX' is replaced with the actual date and record count.
+`records` VARCHAR(32), -- set to human-readable number of records in main table.
+`date` VARCHAR(64)  -- set to human-readable date string.
+);
+INSERT INTO carbarn (readme,records,date) VALUES('',0,'');
+%endif
+
+_cmdshell_
+## '_cmdshell_' creates another .bat batch file to run.
+%if cb['self'].dbms == 'postgres':
+@set PGPASSWORD=${cb['self'].dbpass}
+pg_dump -U ${cb['self'].dbuser} -w -Fc --blobs --encoding=UTF-8 -f ${cb['self'].jobname}.dmp ${cb['self'].jobname}
+%elif cb['self'].dbms == 'mysql':
+@set MYSQL_PWD=${cb['self'].dbpass}
+mysqldump -F -R --user=${cb['self'].dbuser} ${cb['self'].jobname} > ${cb['self'].jobname}.dmp
+%endif
+
+## END NEWJOB.
+###################################

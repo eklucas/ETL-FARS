@@ -1,0 +1,37 @@
+SET default_storage_engine=MYISAM;
+
+## Insert SQL below here.
+##
+## increase the maximum length of a group_concat so our 
+## CSV header row can be larger than 1024 characters.
+SET SESSION group_concat_max_len = 1000000;
+
+
+## Set tables list.
+_inject_ python_main.txt
+
+
+##########################################################
+## EXPORT TABLES.
+## We will concatenate header and records in 5export.txt.
+##########################################################
+%for i, table in enumerate(tables):
+-- EXPORT ${table} (table ${i+1} of ${len(tables)}) to CSV format for Excel/Access.
+SELECT CONCAT(GROUP_CONCAT('"', COLUMN_NAME, '"' SEPARATOR ','), '') FROM INFORMATION_SCHEMA.COLUMNS 
+  WHERE TABLE_SCHEMA = '${cb['self'].working_db}' AND TABLE_NAME  = '${table}' 
+  GROUP BY TABLE_NAME INTO OUTFILE "${cb['self'].done_dirf}/${table}_header.txt" 
+  LINES TERMINATED BY '\r\n';
+SELECT * INTO OUTFILE "${cb['self'].done_dirf}/${table}.txt" 
+  FIELDS TERMINATED BY ',' ENCLOSED BY '"' ESCAPED BY '"' LINES TERMINATED BY '\r\n'
+  FROM `${table}`;  
+%endfor
+
+
+##########################################################
+##-- FIXUP tables for MySQL DUMP format for SQL.
+## We will run mysqldump.exe in 5export.txt.
+##########################################################
+##%for field in date_fields:
+##UPDATE `inspect${year}` SET `${field}` = date_format(str_to_date(`${field}`, '%m/%d/%Y'),'%Y-%m-%d');
+##ALTER TABLE `inspect${year}` CHANGE `${field}` `${field}` DATE NULL;
+##%endfor

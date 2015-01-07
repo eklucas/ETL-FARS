@@ -1,0 +1,69 @@
+## NOTE:  The doimport task is solely for importing data.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+## START DOIMPORT.
+##
+_cmdshell_
+## Copy the initial dump file from newjob task.
+mkdir newjob
+xcopy ${cb['self'].last_0newjob}\done\*.dmp newjob
+xcopy ${cb['self'].last_0newjob}\done\*.log newjob
+
+## Copy data from the last unzipped directory.
+mkdir unzipped
+xcopy ${cb['self'].last_2unzip}\done unzipped /s/e/v
+
+## Create an import database and load initial newjob database.
+%if cb['self'].dbms == 'postgres':
+@set PGPASSWORD=${cb['self'].dbpass}
+createdb -U ${cb['self'].dbuser} -w -E UTF8 --lc-collate=C --lc-ctype=C -T template0 ${cb['self'].working_db}
+pg_restore -U ${cb['self'].dbuser} -w -j 2 -d ${cb['self'].working_db} newjob\${cb['self'].jobname}.dmp
+%elif cb['self'].dbms == 'mysql':
+@set MYSQL_PWD=${cb['self'].dbpass}
+mysqladmin -u ${cb['self'].dbuser} create ${cb['self'].working_db}
+mysql -u ${cb['self'].dbuser} ${cb['self'].working_db} < newjob\${cb['self'].jobname}.dmp
+%endif
+
+
+_psql_
+## Process SQL statements by "psql" program. Feel free to use the STORM ORM in 
+## Python code blocks (i.e. to concurrently use both PostgreSQL and MySQL).
+##
+## Order flow:
+##   a) Run statements in "toimport.pql", if it exists in your job directory.
+##      Ie, c:\carbarn\jobs\testjob\do\toimport.pql.
+##   b) Run statements in _psql_ stanza, if there are any.
+##
+##  Note: "postgres" must be the listed DBMS in "carbarn.ini" for the psql stanza
+##       to be processed by the "psql" program. 
+
+
+_mysql_
+## Process SQL statements by "mysql" program. Feel free to use the STORM ORM in 
+## Python code blocks (i.e. to concurrently use both PostgreSQL and MySQL).
+##
+## Order flow: 
+##   a) Run statements in "toimport.mql", if it exists in your job directory.
+##      Ie, c:\carbarn\jobs\testjob\do\toimport.mql.
+##   b) Run statements in _mysql_ stanza, if there are any.
+##
+## Note: "mysql" must be the listed DBMS in "carbarn.ini for the mysql stanza
+##      to be processed by the "mysql" program. 
+
+
+_cmdshell_
+%if cb['self'].dbms == 'postgres':
+@set PGPASSWORD=${cb['self'].dbpass}
+pg_dump -U ${cb['self'].dbuser} -w -Fc --blobs --encoding=UTF-8 -f imported.dmp ${cb['self'].working_db}
+%elif cb['self'].dbms == 'mysql':
+@set MYSQL_PWD=${cb['self'].dbpass}
+mysqldump -F -R --skip-add-drop-database --no-create-db --user=${cb['self'].dbuser} ${cb['self'].working_db} > imported.dmp
+mysqlshow -v -v -v --user=${cb['self'].dbuser} ${cb['self'].working_db}
+%endif
+
+## END DOIMPORT.
+###################################

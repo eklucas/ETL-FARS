@@ -1,0 +1,16 @@
+## NOTE:  The dounzip task is solely for extracting downloaded data.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+
+###################################
+## START DOUNZIP.
+##
+_cmdshell_
+xcopy ${cb['self'].last_1download}\done\*.zip .
+7za x *.zip
+
+## END DOUNZIP
+###################################
+

@@ -1,0 +1,161 @@
+## NOTE:  The doclean task is for all data transformations, including cleaning.
+##
+## NOTE:  The 'done' directory always has the deliverable, including deliverables 
+##        of dependent tasks.
+##
+## NOTE:  'gcMainTable' and 'gcDoClean' are set in toclean.mql and must exist. 
+##
+
+<%
+ gcMainTable = 'mytable'   # change 'mytable' to your main table.
+ gcDoClean = True          # change 'gcDoClean' to False to disable cleaning code
+                           # in 4clean.txt. Your SQL in toclean.mql always runs.
+ 
+ print "gcMainTable= ", gcMainTable
+ print "gcDoClean= ", gcDoClean
+%>
+
+SET default_storage_engine=MYISAM;
+
+## Insert SQL below here.
+##
+
+
+##########################################################
+-- GENERAL TABLE FIXUP
+##########################################################
+
+## Set 'tables' and other variables.
+_inject_ python_fars.txt
+
+%for table in tables:
+
+UPDATE `${table}` SET 
+  `STATE`=LPAD(`STATE`,2,'0'),         # pad state
+  `ST_CASE`=LPAD(`ST_CASE`,6,'0'),     # pad st_case
+  `NICAR_ID`=CONCAT_WS('',TRIM(`NICAR_ACC_YEAR`),TRIM(`ST_CASE`));
+  
+ALTER TABLE `${table}` CHANGE `NICAR_ACC_YEAR` `NICAR_ACC_YEAR` INT(11) UNSIGNED NOT NULL;
+ALTER TABLE `${table}` CHANGE `NICAR_ID` `NICAR_ID` INT(11) UNSIGNED NOT NULL;
+ALTER TABLE `${table}` ADD NICAR_AUTOINCID INT(11) NOT NULL AUTO_INCREMENT KEY;
+ALTER TABLE `${table}` ADD INDEX USING BTREE (STATE, NICAR_ID);
+  
+%endfor
+
+
+##########################################################
+-- FIXUP ACCIDENT
+##########################################################
+
+UPDATE `accident` SET `VE_FORMS` = 0 WHERE `VE_FORMS` = '';
+UPDATE `accident` SET `PERSONS` = 0 WHERE `PERSONS` = '';
+UPDATE `accident` SET `PEDS` = 0 WHERE `PEDS` = '';
+ALTER TABLE `accident` CHANGE `VE_FORMS` `VE_FORMS` DECIMAL(4,0) DEFAULT NULL ;
+ALTER TABLE `accident` CHANGE `PEDS` `PEDS` DECIMAL(4,0) DEFAULT NULL ;
+ALTER TABLE `accident` CHANGE `PERSONS` `PERSONS` DECIMAL(6,0) DEFAULT NULL ;
+
+ALTER TABLE `accident` 
+  ADD COLUMN `NICAR_ACC_DATE` VARCHAR(10) NOT NULL AFTER `PEDS`,
+  ADD COLUMN `NICAR_TIME` VARCHAR(4) NULL AFTER `NICAR_ACC_DATE`,
+  ADD COLUMN `NICAR_NOT_TIME` VARCHAR(4) NULL AFTER `NICAR_TIME`,
+  ADD COLUMN `NICAR_ARR_TIME` VARCHAR(4) NULL AFTER `NICAR_NOT_TIME`,
+  ADD COLUMN `NICAR_HOSP_TM` VARCHAR(4) NULL AFTER `NICAR_ARR_TIME`,
+  ADD COLUMN `NICAR_MAPLAT` NUMERIC(12,10) NULL AFTER `NICAR_HOSP_TM`,
+  ADD COLUMN `NICAR_MAPLONG` NUMERIC(13,10) NULL AFTER `NICAR_MAPLAT`;
+
+UPDATE `accident` SET 
+  `MONTH`=LPAD(`MONTH`,2,'0'),       # pad month
+  `DAY`=LPAD(`DAY`,2,'0'),           # pad day
+  `YEAR`=LPAD(`YEAR`,4,'0'),         # pad year  
+  `COUNTY`=LPAD(`COUNTY`,3,'0'),     # pad county
+  `CITY`=LPAD(`CITY`,4,'0'),         # pad city
+  `MILEPT`=LPAD(`MILEPT`,5,'0'),     # pad milept
+  `HOUR`=LPAD(`HOUR`,2,'0'),         # pad hour
+  `NOT_HOUR`=LPAD(`NOT_HOUR`,2,'0'), # pad not_hour  
+  `MINUTE`=LPAD(`MINUTE`,2,'0'),     # pad minute  
+  `NOT_MIN`=LPAD(`NOT_MIN`,2,'0'),   # pad not_min  
+  `ARR_HOUR`=LPAD(`ARR_HOUR`,2,'0'), # pad arr_hour
+  `ARR_MIN`=LPAD(`ARR_MIN`,2,'0'),   # pad arr_min  
+  `HOSP_HR`=LPAD(`HOSP_HR`,2,'0'),   # pad hosp_hr  
+  `HOSP_MN`=LPAD(`HOSP_MN`,2,'0'),   # pad hosp_mn  
+  `NICAR_TIME`=CONCAT_WS('',LPAD(`HOUR`,2,'0'),LPAD(`MINUTE`,2,'0')), 
+  `NICAR_NOT_TIME`=CONCAT_WS('',LPAD(`NOT_HOUR`,2,'0'),LPAD(`NOT_MIN`,2,'0')),
+  `NICAR_ARR_TIME`=CONCAT_WS('',LPAD(`ARR_HOUR`,2,'0'),LPAD(`ARR_MIN`,2,'0')),
+  `NICAR_HOSP_TM`=CONCAT_WS('',LPAD(`HOSP_HR`,2,'0'),LPAD(`HOSP_MN`,2,'0'));
+  
+UPDATE `accident` SET `NICAR_ACC_DATE` = '';
+UPDATE `accident` SET 
+  `NICAR_ACC_DATE` = DATE_FORMAT(STR_TO_DATE(
+  CONCAT_WS('',`MONTH`,'/',`DAY`,'/',RIGHT(`YEAR`,2)), '%m/%d/%y'),'%m/%d/%Y') 
+  WHERE LENGTH(CONCAT_WS('',`MONTH`,`DAY`,RIGHT(`YEAR`,2))) > 2
+  AND `YEAR` > 0 AND `MONTH` > 0 AND `MONTH` < 13
+  AND `DAY` > 0 AND `DAY` < 32;
+  
+-- Update MAPLAT and MAPLONG fields.
+UPDATE `accident` SET `NICAR_MAPLAT` = CAST(LEFT(`LATITUDE`,2) AS SIGNED)+
+  CAST(SUBSTR(`LATITUDE`,3,2)/60 AS DECIMAL(65,10))+
+  CAST(SUBSTR(`LATITUDE`,5,4)/360000 AS DECIMAL(65,10)) 
+  WHERE 
+  `LATITUDE` != '' AND `LATITUDE` != '88888888' AND `LATITUDE` != '99999999';
+
+UPDATE `accident` SET `NICAR_MAPLONG` = 0-(
+  CAST(LEFT(`LONGITUD`,3) AS SIGNED)+
+  CAST(SUBSTR(`LONGITUD`,4,2)/60 AS DECIMAL(65,10))+
+  CAST(SUBSTR(`LONGITUD`,6,4)/360000 AS DECIMAL(65,10)))
+  WHERE 
+  `LONGITUD` != '' AND `LONGITUD` != '888888888' AND `LONGITUD` != '999999999';
+ 
+UPDATE `accident` SET `NICAR_MAPLAT` = '99' WHERE
+    `NICAR_MAPLAT` IS NULL OR `NICAR_ACC_YEAR` >= 2001;
+UPDATE `accident` SET `NICAR_MAPLONG` = '999' WHERE 
+    `NICAR_MAPLONG` IS NULL OR `NICAR_ACC_YEAR` >= 2001;
+ 
+
+##########################################################
+-- FIXUP PERSON
+##########################################################
+
+UPDATE `person` SET `VE_FORMS` = 0 WHERE `VE_FORMS` = '';
+UPDATE `person` SET `MOD_YEAR` = 0 WHERE `MOD_YEAR` = '';
+ALTER TABLE `person` CHANGE `VE_FORMS` `VE_FORMS` DECIMAL(4,0) DEFAULT 0 ;
+ALTER TABLE `person` CHANGE `MOD_YEAR` `MOD_YEAR` DECIMAL(6,0) DEFAULT 0 ;
+
+ALTER TABLE `person` 
+  ADD COLUMN `NICAR_DEATHDT` VARCHAR(10) NOT NULL AFTER `DRUGRES3_T`;
+
+UPDATE `person` SET 
+  `COUNTY`=LPAD(`COUNTY`,3,'0'),     # pad county
+  `DEATH_MO`=LPAD(`DEATH_MO`,2,'0'), # pad death_mo
+  `DEATH_DA`=LPAD(`DEATH_DA`,2,'0'), # pad death_da
+  `DEATH_YR`=LPAD(`DEATH_YR`,4,'0'), # pad death_yr
+  `HOUR`=LPAD(`HOUR`,2,'0'),          # pad hour
+  `MINUTE`=LPAD(`MINUTE`,2,'0'),     # pad minute
+  `DEATH_TM`=LPAD(`DEATH_TM`,4,'0'); # pad death_tm
+
+UPDATE `person` SET `NICAR_DEATHDT` = '';  
+UPDATE `person` SET 
+  `NICAR_DEATHDT` = DATE_FORMAT(STR_TO_DATE(
+  CONCAT_WS('',`DEATH_MO`,'/',`DEATH_DA`,'/',RIGHT(`DEATH_YR`,2)), '%m/%d/%y'),'%m/%d/%Y') 
+  WHERE LENGTH(CONCAT_WS('',`DEATH_MO`,`DEATH_DA`,RIGHT(`DEATH_YR`,2))) > 2
+    AND `DEATH_YR` > 0 AND `DEATH_MO` > 0 AND `DEATH_MO` < 13
+    AND `DEATH_DA` > 0 AND `DEATH_DA` < 32; 
+
+
+##########################################################
+-- FIXUP VEHICLE
+##########################################################
+
+UPDATE `vehicle` SET `DEATHS` = 0 WHERE `DEATHS` = '';
+UPDATE `vehicle` SET `MOD_YEAR` = 0 WHERE `MOD_YEAR` = '';
+ALTER TABLE `vehicle` CHANGE `DEATHS` `DEATHS` DECIMAL(4,0) DEFAULT NULL ;
+ALTER TABLE `vehicle` CHANGE `MOD_YEAR` `MOD_YEAR` DECIMAL(6,0) DEFAULT NULL ;
+
+UPDATE `vehicle` SET 
+  `DR_ZIP`=LPAD(`DR_ZIP`,5,'0'),       # pad dr_zip
+  `REG_STAT`=LPAD(`REG_STAT`,2,'0'),   # pad reg_stat
+  `L_STATE`=LPAD(`L_STATE`,2,'0'),     # pad l_state 
+  `AXLES`=LPAD(`AXLES`,2,'0'),         # pad axles
+  `FIRST_MO`=LPAD(`FIRST_MO`,2,'0'),   # pad first_mo
+  `LAST_MO`=LPAD(`LAST_MO`,2,'0'),     # pad last_mo
+  `MAK_MOD`=LPAD(`MAK_MOD`,5,'0');     # pad mak_mod
+  
